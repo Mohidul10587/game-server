@@ -22,15 +22,35 @@ const logger = new Logger('BullRedis');
 export function createBullRedisClient(
   type: 'client' | 'subscriber' | 'bclient',
   redisOpts: Record<string, unknown>,
-): IORedis {
+): any {
   // Bull requires maxRetriesPerRequest: null for bclient and subscriber.
   // Bull's default createClient does this, but our custom one must too —
   // otherwise Bull throws MISSING_REDIS_OPTS when bclient/subscriber are
   // lazily initialized during .process() or event registration.
-  const opts =
-    type === 'bclient' || type === 'subscriber'
-      ? { ...redisOpts, maxRetriesPerRequest: null }
-      : redisOpts;
+  //
+  // Additionally, bclient MUST have enableOfflineQueue: true.
+  // Bull's setWorkerName() (called synchronously from setHandler() →
+  // queue.process()) sends `CLIENT SETNAME` to bclient immediately after
+  // it's lazily created — before the TLS/TCP connection is ready.
+  // With enableOfflineQueue: false, this command is rejected with
+  // "Stream isn't writeable" and crashes the process (unhandled rejection).
+  //
+  // This is safe because bclient only processes BRPOPLPUSH commands in
+  // start(), which calls isRedisReady(bclient) before processing jobs.
+  // The offline queue only buffers the initial setWorkerName command.
+  let opts: Record<string, unknown>;
+
+  if (type === 'bclient') {
+    opts = {
+      ...redisOpts,
+      maxRetriesPerRequest: null,
+      enableOfflineQueue: true,
+    };
+  } else if (type === 'subscriber') {
+    opts = { ...redisOpts, maxRetriesPerRequest: null };
+  } else {
+    opts = redisOpts;
+  }
 
   const client = new IORedis(opts as any);
 

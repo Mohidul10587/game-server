@@ -71,6 +71,16 @@ import { MailerModule } from './mailer/mailer.module.js';
         const port = Number(portRaw) || 6379;
 
         return {
+          // Custom client creation — MUST be at top level, NOT inside
+          // `redis: {}`. Bull reads `options.createClient` in
+          // redisClientGetter (queue.js:290), not
+          // `options.redis.createClient`. Placing it inside `redis`
+          // silently falls back to Bull's default createClient,
+          // bypassing our enableOfflineQueue override for bclient.
+          createClient: (
+            type: 'client' | 'subscriber' | 'bclient',
+            redisOpts: Record<string, unknown>,
+          ) => createBullRedisClient(type, redisOpts),
           redis: {
             host,
             port,
@@ -79,13 +89,6 @@ import { MailerModule } from './mailer/mailer.module.js';
             // Upstash TCP endpoints require TLS (rediss:// equivalent).
             // `tls: {}` enables the default TLS handshake.
             tls: {},
-            // Custom client creation — attaches sanitized connection
-            // event logging (connect, ready, error, reconnecting, close).
-            // No credentials are ever logged.
-            createClient: (
-              type: 'client' | 'subscriber' | 'bclient',
-              redisOpts: Record<string, unknown>,
-            ) => createBullRedisClient(type, redisOpts),
             // Production retry: stop after 10 attempts, backoff up to 3s
             retryStrategy: (times: number) => {
               if (times > 10) return null; // stop retrying, don't crash
@@ -93,11 +96,12 @@ import { MailerModule } from './mailer/mailer.module.js';
             },
             maxRetriesPerRequest: 3,
             // When the connection is down, reject commands immediately
-            // instead of silently queueing them. This surfaces Redis
-            // problems as clear errors rather than hiding them behind
-            // an unbounded offline buffer. The root cause of the original
-            // "Stream isn't writeable" error was missing env vars, not this
-            // setting — with correct config + isReady() guard, this is safe.
+            // instead of silently queueing them. This applies to the
+            // 'client' (commands) and 'subscriber' connections only —
+            // our custom createClient (bull-redis-logger.ts) overrides
+            // enableOfflineQueue: true for 'bclient', because Bull's
+            // setWorkerName() sends a command to bclient before it's
+            // fully connected (Bull design limitation in v4.16.5).
             enableOfflineQueue: false,
             connectTimeout: 10_000,
           },
