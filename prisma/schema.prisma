@@ -1,0 +1,302 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────
+// USER
+// ─────────────────────────────────────────
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  avatarUrl    String?
+  referralCode String   @unique
+  referredBy   String?
+  role         Role     @default(USER)
+  isBanned     Boolean  @default(false)
+  isSuspicious Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  miningPower    MiningPower?
+  coinBalance    CoinBalance?
+  cryptoBalances CryptoBalance[]
+  gameSessionss  GameSession[]
+  userMiners     UserMiner[]
+  rewardHistory  RewardHistory[]
+  withdrawals    Withdrawal[]
+  userQuests     UserQuest[]
+  referralsSent  Referral[]      @relation("ReferrerRelation")
+
+  @@map("users")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+// ─────────────────────────────────────────
+// MINING POWER
+// ─────────────────────────────────────────
+model MiningPower {
+  id             String    @id @default(cuid())
+  userId         String    @unique
+  temporaryPower Int       @default(0)
+  permanentPower Int       @default(0)
+  tempExpiresAt  DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("mining_power")
+}
+
+// ─────────────────────────────────────────
+// GAME SESSIONS
+// ─────────────────────────────────────────
+model GameSession {
+  id          String            @id @default(cuid())
+  userId      String
+  gameType    String
+  token       String            @unique
+  status      GameSessionStatus @default(ACTIVE)
+  score       Int?
+  powerEarned Int?
+  playedAt    DateTime?
+  createdAt   DateTime          @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("game_sessions")
+}
+
+enum GameSessionStatus {
+  ACTIVE
+  COMPLETED
+  EXPIRED
+}
+
+// ─────────────────────────────────────────
+// MINERS (shop items — admin seeded)
+// ─────────────────────────────────────────
+model Miner {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  rarity      Rarity
+  basePower   Int
+  price       Int     // in-game coins
+  imageUrl    String
+  isActive    Boolean @default(true)
+
+  userMiners UserMiner[]
+
+  @@map("miners")
+}
+
+enum Rarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+}
+
+// ─────────────────────────────────────────
+// USER MINERS (owned miners)
+// ─────────────────────────────────────────
+model UserMiner {
+  id           String   @id @default(cuid())
+  userId       String
+  minerId      String
+  isActive     Boolean  @default(true)
+  slotPosition Int?
+  acquiredAt   DateTime @default(now())
+
+  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  miner    Miner              @relation(fields: [minerId], references: [id])
+  listings MarketplaceListing[]
+
+  @@map("user_miners")
+}
+
+// ─────────────────────────────────────────
+// MARKETPLACE LISTINGS
+// ─────────────────────────────────────────
+model MarketplaceListing {
+  id          String        @id @default(cuid())
+  userMinerId String
+  sellerId    String
+  price       Int           // in-game coins
+  status      ListingStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  soldAt      DateTime?
+
+  userMiner UserMiner @relation(fields: [userMinerId], references: [id])
+
+  @@map("marketplace_listings")
+}
+
+enum ListingStatus {
+  ACTIVE
+  SOLD
+  CANCELLED
+}
+
+// ─────────────────────────────────────────
+// COIN BALANCE (in-game currency)
+// ─────────────────────────────────────────
+model CoinBalance {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  amount    Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("coin_balances")
+}
+
+// ─────────────────────────────────────────
+// CRYPTO BALANCE (real crypto: BTC, ETH…)
+// ─────────────────────────────────────────
+model CryptoBalance {
+  id        String   @id @default(cuid())
+  userId    String
+  currency  String   // "BTC", "ETH", "SOL"
+  amount    Decimal  @default(0) @db.Decimal(20, 8)
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, currency])
+  @@map("crypto_balances")
+}
+
+// ─────────────────────────────────────────
+// REWARD HISTORY
+// ─────────────────────────────────────────
+model RewardHistory {
+  id               String   @id @default(cuid())
+  userId           String
+  currency         String
+  amount           Decimal  @db.Decimal(20, 8)
+  poolSharePercent Decimal  @db.Decimal(10, 6)
+  distributedAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("reward_history")
+}
+
+// ─────────────────────────────────────────
+// WITHDRAWALS
+// ─────────────────────────────────────────
+model Withdrawal {
+  id            String           @id @default(cuid())
+  userId        String
+  currency      String
+  amount        Decimal          @db.Decimal(20, 8)
+  walletAddress String
+  status        WithdrawalStatus @default(PENDING)
+  createdAt     DateTime         @default(now())
+  processedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("withdrawals")
+}
+
+enum WithdrawalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PROCESSING
+  COMPLETED
+}
+
+// ─────────────────────────────────────────
+// QUESTS
+// ─────────────────────────────────────────
+model Quest {
+  id             String     @id @default(cuid())
+  title          String
+  description    String
+  type           QuestType
+  requiredAction String     // e.g. "PLAY_GAME", "BUY_MINER", "LOGIN"
+  targetValue    Int        // how many times needed
+  rewardType     RewardType
+  rewardAmount   Int
+  startDate      DateTime?
+  endDate        DateTime?
+  isActive       Boolean    @default(true)
+
+  userQuests UserQuest[]
+
+  @@map("quests")
+}
+
+enum QuestType {
+  DAILY
+  WEEKLY
+}
+
+enum RewardType {
+  COIN
+  CRYPTO
+  MINER
+}
+
+// ─────────────────────────────────────────
+// USER QUEST PROGRESS
+// ─────────────────────────────────────────
+model UserQuest {
+  id          String    @id @default(cuid())
+  userId      String
+  questId     String
+  progress    Int       @default(0)
+  isCompleted Boolean   @default(false)
+  isClaimed   Boolean   @default(false)
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quest Quest @relation(fields: [questId], references: [id])
+
+  @@unique([userId, questId])
+  @@map("user_quests")
+}
+
+// ─────────────────────────────────────────
+// REFERRAL
+// ─────────────────────────────────────────
+model Referral {
+  id           String   @id @default(cuid())
+  referrerId   String
+  referredId   String   @unique
+  bonusPaidDays Int     @default(0) // how many days bonus has been paid (max 30)
+  createdAt    DateTime @default(now())
+
+  referrer User @relation("ReferrerRelation", fields: [referrerId], references: [id])
+
+  @@map("referrals")
+}
+
+// ─────────────────────────────────────────
+// REWARD CONFIG (admin controlled)
+// ─────────────────────────────────────────
+model RewardConfig {
+  id                  String   @id @default(cuid())
+  poolAmountPerCycle  Int      @default(50000) // satoshi per 10 min cycle
+  cycleMinutes        Int      @default(10)
+  updatedAt           DateTime @updatedAt
+
+  @@map("reward_config")
+}
