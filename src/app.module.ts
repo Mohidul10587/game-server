@@ -8,6 +8,7 @@ import { AppService } from './app.service.js';
 // Infrastructure
 import { PrismaModule } from './prisma/prisma.module.js';
 import { RedisModule } from './redis/redis.module.js';
+import { createBullRedisClient } from './redis/bull-redis-logger.js';
 
 // Feature modules
 import { AuthModule } from './auth/auth.module.js';
@@ -33,24 +34,75 @@ import { MailerModule } from './mailer/mailer.module.js';
     }),
 
     // Bull queue — Upstash Redis TCP + TLS connection
+    // ── Environment variable resolution ──────────────────────────────
+    // Priority: UPSTASH_REDIS_* (preferred) → REDIS_* (fallback, matches .env)
+    // No silent localhost fallback — throws if neither is set.
     BullModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (config: ConfigService) => ({
-        redis: {
-          host: config.get<string>('UPSTASH_REDIS_HOST'),
-          port: config.get<number>('UPSTASH_REDIS_PORT', 6379),
-          password: config.get<string>('UPSTASH_REDIS_PASSWORD'),
-          tls: {}, // Upstash requires TLS — cannot be disabled
-          // Production retry: stop after 10 attempts, backoff up to 3s
-          retryStrategy: (times: number) => {
-            if (times > 10) return null; // stop retrying, don't crash
-            return Math.min(times * 300, 3000);
+      useFactory: (config: ConfigService) => {
+        const host =
+          config.get<string>('UPSTASH_REDIS_HOST') ??
+          config.get<string>('REDIS_HOST');
+
+        const portRaw =
+          config.get<string>('UPSTASH_REDIS_PORT') ??
+          config.get<string>('REDIS_PORT');
+
+        const username =
+          config.get<string>('UPSTASH_REDIS_USERNAME') ??
+          config.get<string>('REDIS_USERNAME');
+
+        const password =
+          config.get<string>('UPSTASH_REDIS_PASSWORD') ??
+          config.get<string>('REDIS_PASSWORD');
+
+        if (!host) {
+          throw new Error(
+            '[Bull Redis] Missing required env var: set UPSTASH_REDIS_HOST or REDIS_HOST. ' +
+              'No silent localhost fallback in production.',
+          );
+        }
+        if (!password) {
+          throw new Error(
+            '[Bull Redis] Missing required env var: set UPSTASH_REDIS_PASSWORD or REDIS_PASSWORD.',
+          );
+        }
+
+        const port = Number(portRaw) || 6379;
+
+        return {
+          redis: {
+            host,
+            port,
+            username: username || undefined,
+            password,
+            // Upstash TCP endpoints require TLS (rediss:// equivalent).
+            // `tls: {}` enables the default TLS handshake.
+            tls: {},
+            // Custom client creation — attaches sanitized connection
+            // event logging (connect, ready, error, reconnecting, close).
+            // No credentials are ever logged.
+            createClient: (
+              type: 'client' | 'subscriber' | 'bclient',
+              redisOpts: Record<string, unknown>,
+            ) => createBullRedisClient(type, redisOpts),
+            // Production retry: stop after 10 attempts, backoff up to 3s
+            retryStrategy: (times: number) => {
+              if (times > 10) return null; // stop retrying, don't crash
+              return Math.min(times * 300, 3000);
+            },
+            maxRetriesPerRequest: 3,
+            // When the connection is down, reject commands immediately
+            // instead of silently queueing them. This surfaces Redis
+            // problems as clear errors rather than hiding them behind
+            // an unbounded offline buffer. The root cause of the original
+            // "Stream isn't writeable" error was missing env vars, not this
+            // setting — with correct config + isReady() guard, this is safe.
+            enableOfflineQueue: false,
+            connectTimeout: 10_000,
           },
-          maxRetriesPerRequest: 3,
-          enableOfflineQueue: false,
-          connectTimeout: 10_000,
-        },
-      }),
+        };
+      },
       inject: [ConfigService],
     }),
 
