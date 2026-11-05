@@ -28,12 +28,21 @@ export class RewardModule implements OnModuleInit {
       await this.rewardQueue.removeRepeatableByKey(job.key);
     }
 
-    // Schedule the reward distribution every 10 minutes
+    // Schedule the reward distribution every 10 minutes.
+    // attempts: 3 with exponential backoff (5s, 10s, 20s) ensures
+    // transient DB/Redis failures get retried. On retry, Bull reuses
+    // the same job instance → same prevMillis → same cycleId →
+    // already-rewarded users skipped via P2002.
     await this.rewardQueue.add(
       DISTRIBUTE_JOB,
       {},
       {
         repeat: { every: CYCLE_MINUTES * 60 * 1000 },
+        attempts: 3,
+        backoff: {
+          type: 'exponential',
+          delay: 5000,
+        },
         removeOnComplete: 50,
         removeOnFail: 20,
       },

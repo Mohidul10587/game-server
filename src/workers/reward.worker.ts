@@ -19,8 +19,32 @@ export class RewardWorker {
   ) {}
 
   @Process(DISTRIBUTE_JOB)
-  async handleDistribute(_job: Job) {
-    this.logger.log('Starting reward distribution cycle...');
+  async handleDistribute(job: Job) {
+    // ── Stable Cycle ID from Bull's scheduled timestamp ───────────────────
+    // Bull v4 repeatable jobs store `prevMillis` in job.opts — this is the
+    // scheduled execution time (nextMillis) assigned by the repeatable
+    // scheduler. It is serialized to Redis via toJSON and restored via
+    // fromJSON, so it survives stalled recovery, retries, and restarts.
+    // Using this instead of new Date() guarantees that the same logical
+    // job always produces the same cycleId.
+    const prevMillis = (job.opts as any)?.prevMillis as number | undefined;
+
+    let cycleId: string;
+    if (prevMillis && typeof prevMillis === 'number') {
+      // Use the Bull-scheduled timestamp directly — deterministic per cycle
+      cycleId = new Date(prevMillis).toISOString();
+    } else {
+      // Fallback: floor current time to 10-min window (for manual/non-repeat jobs)
+      const now = new Date();
+      const cycleMs = 10 * 60 * 1000;
+      const cycleStart = new Date(Math.floor(now.getTime() / cycleMs) * cycleMs);
+      cycleId = cycleStart.toISOString();
+      this.logger.warn(
+        `job.opts.prevMillis not available, using fallback cycleId: ${cycleId}`,
+      );
+    }
+
+    this.logger.log(`Starting reward distribution cycle: ${cycleId}`);
 
     try {
       // 1. Clean expired temporary powers first
@@ -61,42 +85,73 @@ export class RewardWorker {
         `Distributing ${poolAmount} satoshi among ${entries.length} miners (total power: ${totalPower} Gh/s)`,
       );
 
-      // 5. Distribute rewards in parallel (batched)
+      // 5. Distribute rewards in parallel — idempotent via cycleId unique constraint
+      let distributed = 0;
+      let skipped = 0;
+      const errors: Error[] = [];
+
       await Promise.all(
         entries.map(async ({ userId, power }) => {
           const sharePercent = power / totalPower;
           const satoshiReward = Math.floor(sharePercent * poolAmount);
           if (satoshiReward === 0) return;
 
-          // Convert satoshi to BTC (1 BTC = 100,000,000 satoshi)
           const btcReward = satoshiReward / 100_000_000;
 
           try {
             await this.prisma.$transaction(async (tx) => {
-              // Upsert BTC crypto balance
-              await tx.cryptoBalance.upsert({
-                where: { userId_currency: { userId, currency: 'BTC' } },
-                update: { amount: { increment: btcReward } },
-                create: { userId, currency: 'BTC', amount: btcReward },
-              });
-
-              // Create reward history
+              // Attempt to create reward history with cycleId.
+              // If this (userId, cycleId, currency) already exists, Prisma throws P2002.
+              // We catch it below to skip gracefully.
               await tx.rewardHistory.create({
                 data: {
                   userId,
+                  cycleId,
                   currency: 'BTC',
                   amount: btcReward,
                   poolSharePercent: sharePercent * 100,
                 },
               });
+
+              // Only update balance if history insert succeeded
+              await tx.cryptoBalance.upsert({
+                where: { userId_currency: { userId, currency: 'BTC' } },
+                update: { amount: { increment: btcReward } },
+                create: { userId, currency: 'BTC', amount: btcReward },
+              });
             });
-          } catch (err) {
-            this.logger.error(`Failed to distribute reward to ${userId}:`, err);
+            distributed++;
+          } catch (err: any) {
+            // P2002 = unique constraint violation → this cycle already rewarded this user
+            if (err?.code === 'P2002') {
+              skipped++;
+              this.logger.debug(
+                `Cycle ${cycleId}: user ${userId} already rewarded, skipping`,
+              );
+            } else {
+              // Non-P2002 error — collect for propagation after all users processed
+              this.logger.error(
+                `Failed to distribute reward to ${userId}:`,
+                err,
+              );
+              errors.push(err);
+            }
           }
         }),
       );
 
-      this.logger.log('Reward distribution cycle complete');
+      this.logger.log(
+        `Cycle ${cycleId} complete — distributed: ${distributed}, skipped (already done): ${skipped}, errors: ${errors.length}`,
+      );
+
+      // If any non-P2002 errors occurred, throw to mark the job as failed.
+      // Bull will retry with the same job (same prevMillis → same cycleId),
+      // and already-rewarded users will be skipped via P2002 on retry.
+      if (errors.length > 0) {
+        throw new Error(
+          `Cycle ${cycleId} failed for ${errors.length} user(s): ${errors[0].message}`,
+        );
+      }
 
       // 6. Re-sync Redis from DB
       await this.syncRedisFromDb();

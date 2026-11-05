@@ -32,14 +32,23 @@ import { MailerModule } from './mailer/mailer.module.js';
       envFilePath: '.env',
     }),
 
-    // BullMQ root config — uses Redis connection from ConfigService
+    // Bull queue — Upstash Redis TCP + TLS connection
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
         redis: {
-          host: config.get<string>('REDIS_HOST', '127.0.0.1'),
-          port: config.get<number>('REDIS_PORT', 6379),
-          password: config.get<string>('REDIS_PASSWORD') || undefined,
+          host: config.get<string>('UPSTASH_REDIS_HOST'),
+          port: config.get<number>('UPSTASH_REDIS_PORT', 6379),
+          password: config.get<string>('UPSTASH_REDIS_PASSWORD'),
+          tls: {}, // Upstash requires TLS — cannot be disabled
+          // Production retry: stop after 10 attempts, backoff up to 3s
+          retryStrategy: (times: number) => {
+            if (times > 10) return null; // stop retrying, don't crash
+            return Math.min(times * 300, 3000);
+          },
+          maxRetriesPerRequest: 3,
+          enableOfflineQueue: false,
+          connectTimeout: 10_000,
         },
       }),
       inject: [ConfigService],

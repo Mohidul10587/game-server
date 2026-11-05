@@ -186,6 +186,7 @@ model CryptoBalance {
 model RewardHistory {
   id               String   @id @default(cuid())
   userId           String
+  cycleId          String   // e.g. "2026-11-05T06:00:00Z" — ISO timestamp of cycle start
   currency         String
   amount           Decimal  @db.Decimal(20, 8)
   poolSharePercent Decimal  @db.Decimal(10, 6)
@@ -193,6 +194,8 @@ model RewardHistory {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // One reward entry per user per cycle — prevents duplicate distribution
+  @@unique([userId, cycleId, currency])
   @@map("reward_history")
 }
 
