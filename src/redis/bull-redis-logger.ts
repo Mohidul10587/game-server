@@ -23,9 +23,16 @@ export function createBullRedisClient(
   type: 'client' | 'subscriber' | 'bclient',
   redisOpts: Record<string, unknown>,
 ): IORedis {
-  // Bull passes maxRetriesPerRequest: null for bclient/subscriber internally.
-  // We just forward whatever Bull gives us.
-  const client = new IORedis(redisOpts as any);
+  // Bull requires maxRetriesPerRequest: null for bclient and subscriber.
+  // Bull's default createClient does this, but our custom one must too —
+  // otherwise Bull throws MISSING_REDIS_OPTS when bclient/subscriber are
+  // lazily initialized during .process() or event registration.
+  const opts =
+    type === 'bclient' || type === 'subscriber'
+      ? { ...redisOpts, maxRetriesPerRequest: null }
+      : redisOpts;
+
+  const client = new IORedis(opts as any);
 
   const tag = `[${type}]`;
 
@@ -52,6 +59,10 @@ export function createBullRedisClient(
 
   client.on('close', () => {
     logger.warn(`${tag} Redis connection closed`);
+  });
+
+  client.on('end', () => {
+    logger.warn(`${tag} Redis connection ended`);
   });
 
   return client;
