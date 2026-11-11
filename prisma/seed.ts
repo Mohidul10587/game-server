@@ -146,6 +146,39 @@ async function main() {
   }
 
   // ─────────────────────────────────────────
+  // MINING POOLS (3 pools: BTC, ETH, SOL)
+  // ─────────────────────────────────────────
+  const pools = [
+    {
+      name: 'BTC Pool',
+      currency: 'BTC',
+      poolAmountPerCycle: 0.0005, // 50,000 satoshi ≈ 0.0005 BTC per 10-min cycle
+      isActive: true,
+    },
+    {
+      name: 'ETH Pool',
+      currency: 'ETH',
+      poolAmountPerCycle: 0.005, // 0.005 ETH per 10-min cycle
+      isActive: true,
+    },
+    {
+      name: 'SOL Pool',
+      currency: 'SOL',
+      poolAmountPerCycle: 0.1, // 0.1 SOL per 10-min cycle
+      isActive: true,
+    },
+  ];
+
+  for (const pool of pools) {
+    await prisma.pool.upsert({
+      where: { currency: pool.currency },
+      update: { poolAmountPerCycle: pool.poolAmountPerCycle, isActive: pool.isActive },
+      create: pool,
+    });
+  }
+  console.log(`✅ Seeded ${pools.length} mining pools (BTC, ETH, SOL)`);
+
+  // ─────────────────────────────────────────
   // ADMIN USER
   // ─────────────────────────────────────────
   const adminEmail = 'admin@banglaminers.com';

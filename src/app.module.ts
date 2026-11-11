@@ -24,6 +24,9 @@ import { AdminModule } from './admin/admin.module.js';
 import { GatewayModule } from './gateway/gateway.module.js';
 import { UsersModule } from './users/users.module.js';
 import { MailerModule } from './mailer/mailer.module.js';
+import { PoolsModule } from './pools/pools.module.js';
+import { MiningRoomModule } from './mining-room/mining-room.module.js';
+import { WalletModule } from './wallet/wallet.module.js';
 
 @Module({
   imports: [
@@ -128,6 +131,9 @@ import { MailerModule } from './mailer/mailer.module.js';
     GatewayModule,
     UsersModule,
     MailerModule,
+    PoolsModule,
+    MiningRoomModule,
+    WalletModule,
   ],
   controllers: [AppController],
   providers: [AppService],

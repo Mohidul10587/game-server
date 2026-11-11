@@ -88,17 +88,29 @@ export class AdminService {
   }
 
   async getRewardConfig() {
-    const config = await this.prisma.rewardConfig.findFirst();
-    if (!config) {
-      // Return defaults if none exists yet
-      return {
+    const [config, pools] = await Promise.all([
+      this.prisma.rewardConfig.findFirst(),
+      this.prisma.pool.findMany({
+        where: { isActive: true },
+        orderBy: { currency: 'asc' },
+      }),
+    ]);
+
+    return {
+      global: config ?? {
         id: null,
         poolAmountPerCycle: 50000,
         cycleMinutes: 10,
         updatedAt: new Date(),
-      };
-    }
-    return config;
+      },
+      pools: pools.map((p) => ({
+        id: p.id,
+        name: p.name,
+        currency: p.currency,
+        poolAmountPerCycle: Number(p.poolAmountPerCycle),
+        isActive: p.isActive,
+      })),
+    };
   }
 
   async updateRewardConfig(
@@ -130,6 +142,63 @@ export class AdminService {
         ...(cycleMinutes !== undefined && { cycleMinutes }),
       },
     });
+  }
+
+  /**
+   * Update a specific pool's reward config (poolAmountPerCycle, isActive).
+   */
+  async updatePoolConfig(
+    poolId: string,
+    poolAmountPerCycle?: number,
+    isActive?: boolean,
+  ) {
+    const pool = await this.prisma.pool.findUnique({ where: { id: poolId } });
+    if (!pool) throw new NotFoundException('Pool not found');
+
+    if (poolAmountPerCycle !== undefined && poolAmountPerCycle < 0) {
+      throw new BadRequestException('Pool amount per cycle must be non-negative');
+    }
+
+    const updated = await this.prisma.pool.update({
+      where: { id: poolId },
+      data: {
+        ...(poolAmountPerCycle !== undefined && { poolAmountPerCycle }),
+        ...(isActive !== undefined && { isActive }),
+      },
+    });
+
+    this.logger.log(
+      `Admin updated pool ${updated.currency}: amount=${updated.poolAmountPerCycle}, active=${updated.isActive}`,
+    );
+
+    return {
+      id: updated.id,
+      name: updated.name,
+      currency: updated.currency,
+      poolAmountPerCycle: Number(updated.poolAmountPerCycle),
+      isActive: updated.isActive,
+    };
+  }
+
+  /**
+   * Get pool participant stats (how many users allocated to each pool).
+   */
+  async getPoolStats() {
+    const pools = await this.prisma.pool.findMany({
+      orderBy: { currency: 'asc' },
+      include: {
+        _count: { select: { allocations: true } },
+      },
+    });
+
+    return pools.map((pool) => ({
+      id: pool.id,
+      name: pool.name,
+      currency: pool.currency,
+      poolAmountPerCycle: Number(pool.poolAmountPerCycle),
+      isActive: pool.isActive,
+      participantCount: pool._count.allocations,
+    }));
   }
 
   async banUser(userId: string, ban: boolean) {

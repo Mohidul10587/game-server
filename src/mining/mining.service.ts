@@ -10,6 +10,7 @@ import { MailerService } from '../mailer/mailer.service.js';
 const MIN_WITHDRAWAL: Record<string, number> = {
   BTC: 0.00085,
   ETH: 0.01,
+  SOL: 0.1,
 };
 
 @Injectable()
@@ -51,16 +52,27 @@ export class MiningService {
   }
 
   async getBalance(userId: string) {
-    const [coinBalance, btcBalance] = await Promise.all([
+    const [coinBalance, cryptoBalances] = await Promise.all([
       this.prisma.coinBalance.findUnique({ where: { userId } }),
-      this.prisma.cryptoBalance.findUnique({
-        where: { userId_currency: { userId, currency: 'BTC' } },
-      }),
+      this.prisma.cryptoBalance.findMany({ where: { userId } }),
     ]);
+
+    // Build a map of all crypto balances
+    const cryptoMap: Record<string, number> = {};
+    for (const cb of cryptoBalances) {
+      cryptoMap[cb.currency] = Number(cb.amount);
+    }
 
     return {
       coins: coinBalance?.amount ?? 0,
-      BTC: btcBalance ? Number(btcBalance.amount) : 0,
+      BTC: cryptoMap['BTC'] ?? 0,
+      ETH: cryptoMap['ETH'] ?? 0,
+      SOL: cryptoMap['SOL'] ?? 0,
+      // Also return all as array for flexibility
+      crypto: cryptoBalances.map((cb) => ({
+        currency: cb.currency,
+        amount: Number(cb.amount),
+      })),
     };
   }
 

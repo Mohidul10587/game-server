@@ -25,15 +25,19 @@ model User {
   updatedAt    DateTime @updatedAt
 
   // Relations
-  miningPower    MiningPower?
-  coinBalance    CoinBalance?
-  cryptoBalances CryptoBalance[]
-  gameSessionss  GameSession[]
-  userMiners     UserMiner[]
-  rewardHistory  RewardHistory[]
-  withdrawals    Withdrawal[]
-  userQuests     UserQuest[]
-  referralsSent  Referral[]      @relation("ReferrerRelation")
+  miningPower        MiningPower?
+  coinBalance        CoinBalance?
+  cryptoBalances     CryptoBalance[]
+  gameSessionss      GameSession[]
+  userMiners         UserMiner[]
+  rewardHistory      RewardHistory[]
+  withdrawals        Withdrawal[]
+  userQuests         UserQuest[]
+  referralsSent      Referral[]           @relation("ReferrerRelation")
+  poolAllocations    UserPoolAllocation[]
+  miningRoom         MiningRoom?
+  depositAddresses   DepositAddress[]
+  deposits           Deposit[]
 
   @@map("users")
 }
@@ -123,6 +127,7 @@ model UserMiner {
   user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   miner    Miner              @relation(fields: [minerId], references: [id])
   listings MarketplaceListing[]
+  slot     MinerSlot?
 
   @@map("user_miners")
 }
@@ -302,4 +307,108 @@ model RewardConfig {
   updatedAt           DateTime @updatedAt
 
   @@map("reward_config")
+}
+
+// ─────────────────────────────────────────
+// MINING POOLS (BTC, ETH, SOL)
+// ─────────────────────────────────────────
+model Pool {
+  id                 String   @id @default(cuid())
+  name               String   @unique  // "BTC Pool", "ETH Pool", "SOL Pool"
+  currency           String   @unique  // "BTC", "ETH", "SOL"
+  poolAmountPerCycle Decimal  @default(0) @db.Decimal(20, 8) // per 10-min cycle in base units
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  allocations UserPoolAllocation[]
+
+  @@map("pools")
+}
+
+// ─────────────────────────────────────────
+// USER POOL ALLOCATION (power split)
+// ─────────────────────────────────────────
+model UserPoolAllocation {
+  id             String   @id @default(cuid())
+  userId         String
+  poolId         String
+  powerPercent   Decimal  @default(0) @db.Decimal(5, 2) // 0.00–100.00
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pool Pool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, poolId])
+  @@map("user_pool_allocations")
+}
+
+// ─────────────────────────────────────────
+// MINING ROOM (slot/rack system)
+// ─────────────────────────────────────────
+model MiningRoom {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  totalSlots Int      @default(9)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slots MinerSlot[]
+
+  @@map("mining_rooms")
+}
+
+model MinerSlot {
+  id           String    @id @default(cuid())
+  roomId       String
+  slotIndex    Int       // 0-based slot position
+  userMinerId  String?   @unique // null = empty slot
+  placedAt     DateTime?
+
+  room      MiningRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userMiner UserMiner? @relation(fields: [userMinerId], references: [id], onDelete: SetNull)
+
+  @@unique([roomId, slotIndex])
+  @@map("miner_slots")
+}
+
+// ─────────────────────────────────────────
+// DEPOSIT ADDRESSES
+// ─────────────────────────────────────────
+model DepositAddress {
+  id        String   @id @default(cuid())
+  userId    String
+  currency  String   // "BTC", "ETH", "SOL"
+  address   String   @unique
+  createdAt DateTime @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deposits Deposit[]
+
+  @@unique([userId, currency])
+  @@map("deposit_addresses")
+}
+
+model Deposit {
+  id               String        @id @default(cuid())
+  depositAddressId String
+  userId           String
+  currency         String
+  amount           Decimal       @db.Decimal(20, 8)
+  txHash           String?       @unique
+  status           DepositStatus @default(PENDING)
+  confirmedAt      DateTime?
+  createdAt        DateTime      @default(now())
+
+  depositAddress DepositAddress @relation(fields: [depositAddressId], references: [id])
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("deposits")
+}
+
+enum DepositStatus {
+  PENDING
+  CONFIRMED
+  FAILED
 }

@@ -6,7 +6,14 @@ import {
   Body,
   UseGuards,
 } from '@nestjs/common';
-import { IsInt, IsOptional, IsPositive, IsBoolean } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsPositive,
+  IsBoolean,
+  IsNumber,
+  Min,
+} from 'class-validator';
 import { AdminService } from './admin.service.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { AdminGuard } from './admin.guard.js';
@@ -26,6 +33,17 @@ class UpdateRewardConfigDto {
 class BanUserDto {
   @IsBoolean()
   isBanned: boolean;
+}
+
+class UpdatePoolConfigDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  poolAmountPerCycle?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }
 
 @UseGuards(JwtAuthGuard, AdminGuard)
@@ -63,6 +81,22 @@ export class AdminController {
     return this.adminService.updateRewardConfig(
       dto.poolAmountPerCycle,
       dto.cycleMinutes,
+    );
+  }
+
+  /** GET /api/admin/pools — list all pools with stats */
+  @Get('pools')
+  getPoolStats() {
+    return this.adminService.getPoolStats();
+  }
+
+  /** PATCH /api/admin/pools/:id — update a specific pool's reward config */
+  @Patch('pools/:id')
+  updatePoolConfig(@Param('id') id: string, @Body() dto: UpdatePoolConfigDto) {
+    return this.adminService.updatePoolConfig(
+      id,
+      dto.poolAmountPerCycle,
+      dto.isActive,
     );
   }
 
