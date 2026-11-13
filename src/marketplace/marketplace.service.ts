@@ -27,16 +27,18 @@ export class MarketplaceService {
     });
   }
 
+  /**
+   * Buy a miner from the official shop.
+   * Miner goes to storage (UserMiner) — NOT auto-placed.
+   * Power is NOT added until miner is placed in a rack.
+   */
   async buyMiner(userId: string, minerId: string) {
-    const miner = await this.prisma.miner.findUnique({
-      where: { id: minerId },
-    });
+    const miner = await this.prisma.miner.findUnique({ where: { id: minerId } });
 
     if (!miner || !miner.isActive) {
       throw new NotFoundException('Miner not found');
     }
 
-    // Check coin balance
     const coinBalance = await this.prisma.coinBalance.findUnique({
       where: { userId },
     });
@@ -54,75 +56,53 @@ export class MarketplaceService {
         data: { amount: { decrement: miner.price } },
       });
 
-      // Create user miner
+      // Create user miner in storage (no auto-placement, no power increment)
       const userMiner = await tx.userMiner.create({
         data: { userId, minerId: miner.id, isActive: true },
         include: { miner: true },
       });
 
-      // Increment permanent power
-      await tx.miningPower.upsert({
-        where: { userId },
-        update: { permanentPower: { increment: miner.basePower } },
-        create: {
-          userId,
-          temporaryPower: 0,
-          permanentPower: miner.basePower,
-        },
-      });
-
       return userMiner;
     });
 
-    // Sync Redis
-    await this.syncPowerToRedis(userId);
+    this.logger.log(`User ${userId} bought miner "${miner.name}" for ${miner.price} coins → added to storage`);
 
-    this.logger.log(
-      `User ${userId} bought miner ${miner.name} for ${miner.price} coins`,
-    );
-
-    return result;
+    return {
+      ...result,
+      message: `Miner "${miner.name}" added to your storage! Place it in a rack to start mining.`,
+    };
   }
 
   async listMiner(userId: string, userMinerId: string, price: number) {
     const userMiner = await this.prisma.userMiner.findUnique({
       where: { id: userMinerId },
+      include: { minerPlacement: true },
     });
 
     if (!userMiner) throw new NotFoundException('UserMiner not found');
-    if (userMiner.userId !== userId) {
-      throw new ForbiddenException('Not your miner');
-    }
-    if (!userMiner.isActive) {
-      throw new BadRequestException('Miner is already listed or inactive');
+    if (userMiner.userId !== userId) throw new ForbiddenException('Not your miner');
+    if (!userMiner.isActive) throw new BadRequestException('Miner is already listed or inactive');
+
+    // Cannot list a miner that is currently placed in a rack
+    if (userMiner.minerPlacement) {
+      throw new BadRequestException('Remove miner from rack before listing');
     }
 
-    // Check no existing active listing
     const existingListing = await this.prisma.marketplaceListing.findFirst({
       where: { userMinerId, status: 'ACTIVE' },
     });
-    if (existingListing) {
-      throw new BadRequestException('Miner is already listed');
-    }
+    if (existingListing) throw new BadRequestException('Miner is already listed');
 
-    if (price <= 0) {
-      throw new BadRequestException('Price must be positive');
-    }
+    if (price <= 0) throw new BadRequestException('Price must be positive');
 
     const listing = await this.prisma.$transaction(async (tx) => {
-      // Deactivate the miner while listed
       await tx.userMiner.update({
         where: { id: userMinerId },
         data: { isActive: false },
       });
 
       return tx.marketplaceListing.create({
-        data: {
-          userMinerId,
-          sellerId: userId,
-          price,
-          status: 'ACTIVE',
-        },
+        data: { userMinerId, sellerId: userId, price, status: 'ACTIVE' },
         include: { userMiner: { include: { miner: true } } },
       });
     });
@@ -149,7 +129,6 @@ export class MarketplaceService {
     const commission = Math.floor(price * MARKETPLACE_COMMISSION);
     const sellerReceives = price - commission;
 
-    // Check buyer's coin balance
     const buyerBalance = await this.prisma.coinBalance.findUnique({
       where: { userId: buyerId },
     });
@@ -161,56 +140,36 @@ export class MarketplaceService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      // Deduct buyer's coins
       await tx.coinBalance.update({
         where: { userId: buyerId },
         data: { amount: { decrement: price } },
       });
 
-      // Credit seller (minus commission)
       await tx.coinBalance.upsert({
         where: { userId: listing.sellerId },
         update: { amount: { increment: sellerReceives } },
         create: { userId: listing.sellerId, amount: sellerReceives },
       });
 
-      // Transfer the miner to buyer
+      // Transfer miner to buyer's storage (isActive=true, no auto-placement)
       await tx.userMiner.update({
         where: { id: listing.userMinerId },
         data: { userId: buyerId, isActive: true },
       });
 
-      // Close the listing
       await tx.marketplaceListing.update({
         where: { id: listingId },
         data: { status: 'SOLD', soldAt: new Date() },
       });
 
-      // Subtract miner power from seller, add to buyer
-      const miner = listing.userMiner.miner;
-
-      await tx.miningPower.upsert({
-        where: { userId: listing.sellerId },
-        update: { permanentPower: { decrement: miner.basePower } },
-        create: { userId: listing.sellerId, temporaryPower: 0, permanentPower: 0 },
-      });
-
-      await tx.miningPower.upsert({
-        where: { userId: buyerId },
-        update: { permanentPower: { increment: miner.basePower } },
-        create: { userId: buyerId, temporaryPower: 0, permanentPower: miner.basePower },
-      });
+      // Note: Power is NOT transferred here.
+      // Power is recalculated when miner is placed in a rack.
     });
 
-    // Sync Redis for both users
-    await Promise.all([
-      this.syncPowerToRedis(listing.sellerId),
-      this.syncPowerToRedis(buyerId),
-    ]);
+    // Recalculate power for seller (they may have lost a placed miner's power)
+    await this.syncPowerToRedis(listing.sellerId);
 
-    this.logger.log(
-      `User ${buyerId} purchased listing ${listingId} for ${price} coins`,
-    );
+    this.logger.log(`User ${buyerId} purchased listing ${listingId} for ${price} coins → miner in storage`);
 
     return { success: true, listingId, price, commission };
   }
@@ -220,10 +179,8 @@ export class MarketplaceService {
       where: { userId },
       include: {
         miner: true,
-        listings: {
-          where: { status: 'ACTIVE' },
-          take: 1,
-        },
+        listings: { where: { status: 'ACTIVE' }, take: 1 },
+        minerPlacement: { include: { rackPlacement: { include: { room: true } } } },
       },
       orderBy: { acquiredAt: 'desc' },
     });
@@ -232,9 +189,7 @@ export class MarketplaceService {
   async getListings() {
     return this.prisma.marketplaceListing.findMany({
       where: { status: 'ACTIVE' },
-      include: {
-        userMiner: { include: { miner: true } },
-      },
+      include: { userMiner: { include: { miner: true } } },
       orderBy: { createdAt: 'desc' },
     });
   }

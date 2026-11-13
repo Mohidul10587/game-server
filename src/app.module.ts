@@ -27,6 +27,7 @@ import { MailerModule } from './mailer/mailer.module.js';
 import { PoolsModule } from './pools/pools.module.js';
 import { MiningRoomModule } from './mining-room/mining-room.module.js';
 import { WalletModule } from './wallet/wallet.module.js';
+import { RackShopModule } from './rack-shop/rack-shop.module.js';
 
 @Module({
   imports: [
@@ -134,6 +135,7 @@ import { WalletModule } from './wallet/wallet.module.js';
     PoolsModule,
     MiningRoomModule,
     WalletModule,
+    RackShopModule,
   ],
   controllers: [AppController],
   providers: [AppService],

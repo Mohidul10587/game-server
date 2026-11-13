@@ -35,9 +35,12 @@ model User {
   userQuests         UserQuest[]
   referralsSent      Referral[]           @relation("ReferrerRelation")
   poolAllocations    UserPoolAllocation[]
-  miningRoom         MiningRoom?
+  miningRooms        MiningRoom[]
   depositAddresses   DepositAddress[]
   deposits           Deposit[]
+  rackInventory      UserRackInventory[]
+  rackPlacements     UserRackPlacement[]
+  minerPlacements    UserMinerPlacement[]
 
   @@map("users")
 }
@@ -89,17 +92,19 @@ enum GameSessionStatus {
 }
 
 // ─────────────────────────────────────────
-// MINERS (shop items — admin seeded)
+// MINERS (shop items — admin managed)
 // ─────────────────────────────────────────
 model Miner {
-  id          String  @id @default(cuid())
-  name        String
-  description String?
-  rarity      Rarity
-  basePower   Int
-  price       Int     // in-game coins
-  imageUrl    String
-  isActive    Boolean @default(true)
+  id           String  @id @default(cuid())
+  name         String
+  description  String?
+  rarity       Rarity
+  basePower    Int     // Gh/s mining power
+  miningPower  Int     @default(0) // alias kept for frontend compat
+  price        Int     // in-game coins
+  imageUrl     String
+  minerType    String  @default("standard")
+  isActive     Boolean @default(true)
 
   userMiners UserMiner[]
 
@@ -114,20 +119,20 @@ enum Rarity {
 }
 
 // ─────────────────────────────────────────
-// USER MINERS (owned miners)
+// USER MINERS (owned miners — inventory)
 // ─────────────────────────────────────────
 model UserMiner {
-  id           String   @id @default(cuid())
-  userId       String
-  minerId      String
-  isActive     Boolean  @default(true)
-  slotPosition Int?
-  acquiredAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  userId     String
+  minerId    String
+  isActive   Boolean  @default(true)
+  acquiredAt DateTime @default(now())
 
-  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  miner    Miner              @relation(fields: [minerId], references: [id])
-  listings MarketplaceListing[]
-  slot     MinerSlot?
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  miner           Miner              @relation(fields: [minerId], references: [id])
+  listings        MarketplaceListing[]
+  slot            MinerSlot?         // legacy — kept for backward compat
+  minerPlacement  UserMinerPlacement?
 
   @@map("user_miners")
 }
@@ -139,7 +144,7 @@ model MarketplaceListing {
   id          String        @id @default(cuid())
   userMinerId String
   sellerId    String
-  price       Int           // in-game coins
+  price       Int
   status      ListingStatus @default(ACTIVE)
   createdAt   DateTime      @default(now())
   soldAt      DateTime?
@@ -156,7 +161,7 @@ enum ListingStatus {
 }
 
 // ─────────────────────────────────────────
-// COIN BALANCE (in-game currency)
+// COIN BALANCE
 // ─────────────────────────────────────────
 model CoinBalance {
   id        String   @id @default(cuid())
@@ -170,12 +175,12 @@ model CoinBalance {
 }
 
 // ─────────────────────────────────────────
-// CRYPTO BALANCE (real crypto: BTC, ETH…)
+// CRYPTO BALANCE
 // ─────────────────────────────────────────
 model CryptoBalance {
   id        String   @id @default(cuid())
   userId    String
-  currency  String   // "BTC", "ETH", "SOL"
+  currency  String
   amount    Decimal  @default(0) @db.Decimal(20, 8)
   updatedAt DateTime @updatedAt
 
@@ -191,7 +196,7 @@ model CryptoBalance {
 model RewardHistory {
   id               String   @id @default(cuid())
   userId           String
-  cycleId          String   // e.g. "2026-11-05T06:00:00Z" — ISO timestamp of cycle start
+  cycleId          String
   currency         String
   amount           Decimal  @db.Decimal(20, 8)
   poolSharePercent Decimal  @db.Decimal(10, 6)
@@ -199,7 +204,6 @@ model RewardHistory {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // One reward entry per user per cycle — prevents duplicate distribution
   @@unique([userId, cycleId, currency])
   @@map("reward_history")
 }
@@ -238,8 +242,8 @@ model Quest {
   title          String
   description    String
   type           QuestType
-  requiredAction String     // e.g. "PLAY_GAME", "BUY_MINER", "LOGIN"
-  targetValue    Int        // how many times needed
+  requiredAction String
+  targetValue    Int
   rewardType     RewardType
   rewardAmount   Int
   startDate      DateTime?
@@ -286,11 +290,11 @@ model UserQuest {
 // REFERRAL
 // ─────────────────────────────────────────
 model Referral {
-  id           String   @id @default(cuid())
-  referrerId   String
-  referredId   String   @unique
-  bonusPaidDays Int     @default(0) // how many days bonus has been paid (max 30)
-  createdAt    DateTime @default(now())
+  id            String   @id @default(cuid())
+  referrerId    String
+  referredId    String   @unique
+  bonusPaidDays Int      @default(0)
+  createdAt     DateTime @default(now())
 
   referrer User @relation("ReferrerRelation", fields: [referrerId], references: [id])
 
@@ -298,11 +302,11 @@ model Referral {
 }
 
 // ─────────────────────────────────────────
-// REWARD CONFIG (admin controlled)
+// REWARD CONFIG
 // ─────────────────────────────────────────
 model RewardConfig {
   id                  String   @id @default(cuid())
-  poolAmountPerCycle  Int      @default(50000) // satoshi per 10 min cycle
+  poolAmountPerCycle  Int      @default(50000)
   cycleMinutes        Int      @default(10)
   updatedAt           DateTime @updatedAt
 
@@ -310,13 +314,13 @@ model RewardConfig {
 }
 
 // ─────────────────────────────────────────
-// MINING POOLS (BTC, ETH, SOL)
+// MINING POOLS
 // ─────────────────────────────────────────
 model Pool {
   id                 String   @id @default(cuid())
-  name               String   @unique  // "BTC Pool", "ETH Pool", "SOL Pool"
-  currency           String   @unique  // "BTC", "ETH", "SOL"
-  poolAmountPerCycle Decimal  @default(0) @db.Decimal(20, 8) // per 10-min cycle in base units
+  name               String   @unique
+  currency           String   @unique
+  poolAmountPerCycle Decimal  @default(0) @db.Decimal(20, 8)
   isActive           Boolean  @default(true)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -327,14 +331,14 @@ model Pool {
 }
 
 // ─────────────────────────────────────────
-// USER POOL ALLOCATION (power split)
+// USER POOL ALLOCATION
 // ─────────────────────────────────────────
 model UserPoolAllocation {
-  id             String   @id @default(cuid())
-  userId         String
-  poolId         String
-  powerPercent   Decimal  @default(0) @db.Decimal(5, 2) // 0.00–100.00
-  updatedAt      DateTime @updatedAt
+  id           String   @id @default(cuid())
+  userId       String
+  poolId       String
+  powerPercent Decimal  @default(0) @db.Decimal(5, 2)
+  updatedAt    DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   pool Pool @relation(fields: [poolId], references: [id], onDelete: Cascade)
@@ -344,27 +348,38 @@ model UserPoolAllocation {
 }
 
 // ─────────────────────────────────────────
-// MINING ROOM (slot/rack system)
+// MINING ROOM (multi-room system)
+// 4 rooms per user. Room 01 = default unlocked.
 // ─────────────────────────────────────────
 model MiningRoom {
-  id         String   @id @default(cuid())
-  userId     String   @unique
-  totalSlots Int      @default(9)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id           String   @id @default(cuid())
+  userId       String
+  roomNumber   Int      @default(1) // 1-4
+  isUnlocked   Boolean  @default(false)
+  unlockCost   Int      @default(0)
+  gridCols     Int      @default(4)  // rack grid columns
+  gridRows     Int      @default(3)  // rack grid rows (max 12 racks)
+  totalSlots   Int      @default(9)  // legacy — kept for backward compat
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  slots MinerSlot[]
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slots         MinerSlot[]         // legacy
+  rackPlacements UserRackPlacement[]
 
+  @@unique([userId, roomNumber])
   @@map("mining_rooms")
 }
 
+// ─────────────────────────────────────────
+// MINER SLOT (legacy — kept for backward compat)
+// ─────────────────────────────────────────
 model MinerSlot {
-  id           String    @id @default(cuid())
-  roomId       String
-  slotIndex    Int       // 0-based slot position
-  userMinerId  String?   @unique // null = empty slot
-  placedAt     DateTime?
+  id          String    @id @default(cuid())
+  roomId      String
+  slotIndex   Int
+  userMinerId String?   @unique
+  placedAt    DateTime?
 
   room      MiningRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
   userMiner UserMiner? @relation(fields: [userMinerId], references: [id], onDelete: SetNull)
@@ -374,12 +389,106 @@ model MinerSlot {
 }
 
 // ─────────────────────────────────────────
+// RACK PRODUCT (admin-managed shop items)
+// ─────────────────────────────────────────
+model RackProduct {
+  id            String   @id @default(cuid())
+  name          String
+  description   String?
+  imageUrl      String   @default("/assets/racks/rack-basic.svg")
+  price         Int      // in-game coins
+  minerCapacity Int      @default(4)  // how many miners can be placed
+  rackType      String   @default("basic")
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  rackInventory  UserRackInventory[]
+  rackPlacements UserRackPlacement[]
+
+  @@map("rack_products")
+}
+
+// ─────────────────────────────────────────
+// USER RACK INVENTORY (owned racks in storage)
+// ─────────────────────────────────────────
+model UserRackInventory {
+  id            String   @id @default(cuid())
+  userId        String
+  rackProductId String
+  acquiredAt    DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rackProduct RackProduct @relation(fields: [rackProductId], references: [id])
+  placement   UserRackPlacement? // null = in storage, set = placed in room
+
+  @@map("user_rack_inventory")
+}
+
+// ─────────────────────────────────────────
+// USER RACK PLACEMENT (rack placed in a room)
+// ─────────────────────────────────────────
+model UserRackPlacement {
+  id              String    @id @default(cuid())
+  userId          String
+  roomId          String
+  rackInventoryId String    @unique  // one rack can only be in one place
+  rackProductId   String
+  slotIndex       Int       // grid position in room (0-based)
+  placedAt        DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room           MiningRoom        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  rackInventory  UserRackInventory @relation(fields: [rackInventoryId], references: [id], onDelete: Cascade)
+  rackProduct    RackProduct       @relation(fields: [rackProductId], references: [id])
+  minerPlacements UserMinerPlacement[]
+
+  @@unique([roomId, slotIndex])  // one rack per slot
+  @@map("user_rack_placements")
+}
+
+// ─────────────────────────────────────────
+// USER MINER PLACEMENT (miner inside a rack)
+// ─────────────────────────────────────────
+model UserMinerPlacement {
+  id               String    @id @default(cuid())
+  userId           String
+  rackPlacementId  String
+  userMinerId      String    @unique  // one miner can only be in one place
+  slotIndex        Int       // position inside rack (0-based)
+  placedAt         DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rackPlacement  UserRackPlacement @relation(fields: [rackPlacementId], references: [id], onDelete: Cascade)
+  userMiner      UserMiner         @relation(fields: [userMinerId], references: [id], onDelete: Cascade)
+
+  @@unique([rackPlacementId, slotIndex])  // one miner per rack slot
+  @@map("user_miner_placements")
+}
+
+// ─────────────────────────────────────────
+// ROOM CONFIG (admin-controlled unlock costs)
+// ─────────────────────────────────────────
+model RoomConfig {
+  id         String   @id @default(cuid())
+  roomNumber Int      @unique // 1-4
+  unlockCost Int      @default(0)
+  name       String   @default("")
+  isActive   Boolean  @default(true)
+  updatedAt  DateTime @updatedAt
+
+  @@map("room_config")
+}
+
+// ─────────────────────────────────────────
 // DEPOSIT ADDRESSES
 // ─────────────────────────────────────────
 model DepositAddress {
   id        String   @id @default(cuid())
   userId    String
-  currency  String   // "BTC", "ETH", "SOL"
+  currency  String
   address   String   @unique
   createdAt DateTime @default(now())
 
