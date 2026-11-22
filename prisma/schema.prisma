@@ -357,8 +357,8 @@ model MiningRoom {
   roomNumber   Int      @default(1) // 1-4
   isUnlocked   Boolean  @default(false)
   unlockCost   Int      @default(0)
-  gridCols     Int      @default(4)  // rack grid columns
-  gridRows     Int      @default(3)  // rack grid rows (max 12 racks)
+  gridCols     Int      @default(10) // rack grid columns
+  gridRows     Int      @default(3)  // rack grid rows (max 30 racks)
   totalSlots   Int      @default(9)  // legacy — kept for backward compat
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -397,7 +397,7 @@ model RackProduct {
   description   String?
   imageUrl      String   @default("/assets/racks/rack-basic.svg")
   price         Int      // in-game coins
-  minerCapacity Int      @default(4)  // how many miners can be placed
+  minerCapacity Int      @default(6)  // at most six miners across three shelves
   rackType      String   @default("basic")
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())

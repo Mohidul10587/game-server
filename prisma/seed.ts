@@ -91,10 +91,10 @@ async function main() {
     },
     {
       name: 'Pro Rack',
-      description: 'Professional 8-slot rack for serious miners.',
+      description: 'Professional 6-slot rack for serious miners.',
       imageUrl: '/assets/racks/rack-basic.svg',
       price: 6000,
-      minerCapacity: 8,
+      minerCapacity: 6,
       rackType: 'pro',
       isActive: true,
     },

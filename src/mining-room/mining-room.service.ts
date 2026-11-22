@@ -10,6 +10,7 @@ import { RedisService } from '../redis/redis.service.js';
 
 const POWER_KEY = 'mining:powers';
 const TOTAL_ROOMS = 4;
+const MAX_RACK_CAPACITY = 6;
 
 @Injectable()
 export class MiningRoomService {
@@ -293,7 +294,7 @@ export class MiningRoomService {
     if (!rackPlacement.room.isUnlocked) throw new ForbiddenException('Room is locked');
 
     // Check capacity
-    const capacity = rackPlacement.rackProduct.minerCapacity;
+    const capacity = Math.min(rackPlacement.rackProduct.minerCapacity, MAX_RACK_CAPACITY);
     if (rackPlacement.minerPlacements.length >= capacity) {
       throw new BadRequestException(`Rack is full (capacity: ${capacity})`);
     }
@@ -381,9 +382,14 @@ export class MiningRoomService {
     if (targetRack.userId !== userId) throw new ForbiddenException('Not your rack');
     if (!targetRack.room.isUnlocked) throw new ForbiddenException('Target room is locked');
 
+    const targetCapacity = Math.min(targetRack.rackProduct.minerCapacity, MAX_RACK_CAPACITY);
+    if (targetSlotIndex < 0 || targetSlotIndex >= targetCapacity) {
+      throw new BadRequestException(`Invalid slot index. Must be 0–${targetCapacity - 1}`);
+    }
+
     // Check capacity if moving to different rack
     if (placement.rackPlacementId !== targetRackPlacementId) {
-      if (targetRack.minerPlacements.length >= targetRack.rackProduct.minerCapacity) {
+      if (targetRack.minerPlacements.length >= targetCapacity) {
         throw new BadRequestException('Target rack is full');
       }
     }
@@ -628,7 +634,7 @@ export class MiningRoomService {
         id: rp.rackProduct?.id,
         name: rp.rackProduct?.name,
         imageUrl: rp.rackProduct?.imageUrl,
-        minerCapacity: rp.rackProduct?.minerCapacity,
+        minerCapacity: Math.min(rp.rackProduct?.minerCapacity ?? MAX_RACK_CAPACITY, MAX_RACK_CAPACITY),
         rackType: rp.rackProduct?.rackType,
       },
       minerPlacements: (rp.minerPlacements ?? []).map((mp: any) => ({
@@ -647,7 +653,7 @@ export class MiningRoomService {
           : null,
       })),
       minerCount: (rp.minerPlacements ?? []).length,
-      capacity: rp.rackProduct?.minerCapacity ?? 4,
+      capacity: Math.min(rp.rackProduct?.minerCapacity ?? MAX_RACK_CAPACITY, MAX_RACK_CAPACITY),
       placedAt: rp.placedAt,
     };
   }
