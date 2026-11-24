@@ -294,7 +294,7 @@ export class MiningRoomService {
     if (!rackPlacement.room.isUnlocked) throw new ForbiddenException('Room is locked');
 
     // Check capacity
-    const capacity = Math.min(rackPlacement.rackProduct.minerCapacity, MAX_RACK_CAPACITY);
+    const capacity = MAX_RACK_CAPACITY;
     if (rackPlacement.minerPlacements.length >= capacity) {
       throw new BadRequestException(`Rack is full (capacity: ${capacity})`);
     }
@@ -382,7 +382,7 @@ export class MiningRoomService {
     if (targetRack.userId !== userId) throw new ForbiddenException('Not your rack');
     if (!targetRack.room.isUnlocked) throw new ForbiddenException('Target room is locked');
 
-    const targetCapacity = Math.min(targetRack.rackProduct.minerCapacity, MAX_RACK_CAPACITY);
+    const targetCapacity = MAX_RACK_CAPACITY;
     if (targetSlotIndex < 0 || targetSlotIndex >= targetCapacity) {
       throw new BadRequestException(`Invalid slot index. Must be 0–${targetCapacity - 1}`);
     }
@@ -436,7 +436,6 @@ export class MiningRoomService {
         name: inv.rackProduct.name,
         description: inv.rackProduct.description,
         imageUrl: inv.rackProduct.imageUrl,
-        minerCapacity: inv.rackProduct.minerCapacity,
         rackType: inv.rackProduct.rackType,
       },
       acquiredAt: inv.acquiredAt,
@@ -634,7 +633,6 @@ export class MiningRoomService {
         id: rp.rackProduct?.id,
         name: rp.rackProduct?.name,
         imageUrl: rp.rackProduct?.imageUrl,
-        minerCapacity: Math.min(rp.rackProduct?.minerCapacity ?? MAX_RACK_CAPACITY, MAX_RACK_CAPACITY),
         rackType: rp.rackProduct?.rackType,
       },
       minerPlacements: (rp.minerPlacements ?? []).map((mp: any) => ({
@@ -653,7 +651,7 @@ export class MiningRoomService {
           : null,
       })),
       minerCount: (rp.minerPlacements ?? []).length,
-      capacity: Math.min(rp.rackProduct?.minerCapacity ?? MAX_RACK_CAPACITY, MAX_RACK_CAPACITY),
+      capacity: MAX_RACK_CAPACITY,
       placedAt: rp.placedAt,
     };
   }

@@ -250,7 +250,6 @@ export class AdminService {
     description?: string;
     imageUrl?: string;
     price: number;
-    minerCapacity: number;
     rackType?: string;
   }) {
     return this.prisma.rackProduct.create({
@@ -259,7 +258,6 @@ export class AdminService {
         description: data.description,
         imageUrl: data.imageUrl ?? '/assets/racks/rack-basic.svg',
         price: data.price,
-        minerCapacity: data.minerCapacity,
         rackType: data.rackType ?? 'basic',
         isActive: true,
       },
@@ -271,7 +269,6 @@ export class AdminService {
     description?: string;
     imageUrl?: string;
     price?: number;
-    minerCapacity?: number;
     rackType?: string;
     isActive?: boolean;
   }) {

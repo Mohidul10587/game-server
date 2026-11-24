@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import {
   IsInt, IsOptional, IsPositive, IsBoolean,
-  IsNumber, IsString, IsIn, Min, Max,
+  IsNumber, IsString, IsIn, Min,
 } from 'class-validator';
 import { AdminService } from './admin.service.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
@@ -58,7 +58,6 @@ class CreateRackDto {
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() imageUrl?: string;
   @IsInt() @Min(1) price: number;
-  @IsInt() @Min(1) @Max(6) @IsPositive() minerCapacity: number;
   @IsOptional() @IsString() rackType?: string;
 }
 
@@ -67,7 +66,6 @@ class UpdateRackDto {
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() imageUrl?: string;
   @IsOptional() @IsInt() @Min(1) price?: number;
-  @IsOptional() @IsInt() @Min(1) @Max(6) minerCapacity?: number;
   @IsOptional() @IsString() rackType?: string;
   @IsOptional() @IsBoolean() isActive?: boolean;
 }

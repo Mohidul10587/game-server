@@ -397,7 +397,6 @@ model RackProduct {
   description   String?
   imageUrl      String   @default("/assets/racks/rack-basic.svg")
   price         Int      // in-game coins
-  minerCapacity Int      @default(6)  // at most six miners across three shelves
   rackType      String   @default("basic")
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
