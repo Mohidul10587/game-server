@@ -74,7 +74,7 @@ async function main() {
     {
       name: 'Basic Rack',
       description: 'A standard mining rack. Great for getting started.',
-      imageUrl: '/assets/racks/rack-basic.svg',
+      imageUrl: '/assets/racks/basic_rack.gif',
       price: 1000,
       rackType: 'basic',
       isActive: true,
@@ -82,7 +82,7 @@ async function main() {
     {
       name: 'Standard Rack',
       description: 'An upgraded rack with better ventilation.',
-      imageUrl: '/assets/racks/rack-basic.svg',
+      imageUrl: '/assets/racks/green_scanner_rack.gif',
       price: 2500,
       rackType: 'standard',
       isActive: true,
@@ -90,7 +90,7 @@ async function main() {
     {
       name: 'Pro Rack',
       description: 'Professional rack for serious miners.',
-      imageUrl: '/assets/racks/rack-basic.svg',
+      imageUrl: '/assets/racks/cyberpunk_rack.gif',
       price: 6000,
       rackType: 'pro',
       isActive: true,

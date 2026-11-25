@@ -10,7 +10,7 @@ import { RedisService } from '../redis/redis.service.js';
 
 const POWER_KEY = 'mining:powers';
 const TOTAL_ROOMS = 4;
-const MAX_RACK_CAPACITY = 6;
+const MAX_RACK_CAPACITY = 4;
 
 @Injectable()
 export class MiningRoomService {

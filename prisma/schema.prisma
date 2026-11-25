@@ -395,7 +395,7 @@ model RackProduct {
   id            String   @id @default(cuid())
   name          String
   description   String?
-  imageUrl      String   @default("/assets/racks/rack-basic.svg")
+  imageUrl      String   @default("/assets/racks/basic_rack.gif")
   price         Int      // in-game coins
   rackType      String   @default("basic")
   isActive      Boolean  @default(true)

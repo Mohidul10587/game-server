@@ -256,7 +256,7 @@ export class AdminService {
       data: {
         name: data.name,
         description: data.description,
-        imageUrl: data.imageUrl ?? '/assets/racks/rack-basic.svg',
+        imageUrl: data.imageUrl ?? '/assets/racks/basic_rack.gif',
         price: data.price,
         rackType: data.rackType ?? 'basic',
         isActive: true,

@@ -50,6 +50,7 @@ class PlaceMinerDto {
 
   @IsInt()
   @Min(0)
+  @Max(3)
   slotIndex: number;
 }
 
@@ -59,6 +60,7 @@ class MoveMinerDto {
 
   @IsInt()
   @Min(0)
+  @Max(3)
   targetSlotIndex: number;
 }
 
