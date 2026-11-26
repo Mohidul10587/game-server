@@ -12,18 +12,15 @@ export class ReferralService {
   ) {}
 
   async getReferralStats(userId: string) {
-    const referrals = await this.prisma.referral.findMany({
+    const referralCount = await this.prisma.referral.count({
       where: { referrerId: userId },
-      include: {
-        referrer: { select: { id: true } },
-      },
     });
 
     // Each referral earns the referrer 500 coins
-    const totalEarnings = referrals.length * 500;
+    const totalEarnings = referralCount * 500;
 
     return {
-      referralCount: referrals.length,
+      referralCount,
       totalEarnings,
     };
   }

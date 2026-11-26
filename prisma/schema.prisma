@@ -43,6 +43,7 @@ model User {
   minerPlacements    UserMinerPlacement[]
 
   @@map("users")
+  @@index([createdAt(sort: Desc)], map: "users_createdAt_idx")
 }
 
 enum Role {
@@ -64,6 +65,7 @@ model MiningPower {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("mining_power")
+  @@index([permanentPower(sort: Desc), temporaryPower(sort: Desc)], map: "mining_power_leaderboard_idx")
 }
 
 // ─────────────────────────────────────────
@@ -83,6 +85,8 @@ model GameSession {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("game_sessions")
+  @@index([userId, status], map: "game_sessions_userId_status_idx")
+  @@index([userId, createdAt(sort: Desc)], map: "game_sessions_userId_createdAt_idx")
 }
 
 enum GameSessionStatus {
@@ -135,6 +139,8 @@ model UserMiner {
   minerPlacement  UserMinerPlacement?
 
   @@map("user_miners")
+  @@index([userId, isActive], map: "user_miners_userId_isActive_idx")
+  @@index([userId, acquiredAt(sort: Desc)], map: "user_miners_userId_acquiredAt_idx")
 }
 
 // ─────────────────────────────────────────
@@ -152,6 +158,8 @@ model MarketplaceListing {
   userMiner UserMiner @relation(fields: [userMinerId], references: [id])
 
   @@map("marketplace_listings")
+  @@index([status, createdAt(sort: Desc)], map: "marketplace_listings_status_createdAt_idx")
+  @@index([userMinerId, status], map: "marketplace_listings_userMinerId_status_idx")
 }
 
 enum ListingStatus {
@@ -206,6 +214,7 @@ model RewardHistory {
 
   @@unique([userId, cycleId, currency])
   @@map("reward_history")
+  @@index([userId, distributedAt(sort: Desc)], map: "reward_history_userId_distributedAt_idx")
 }
 
 // ─────────────────────────────────────────
@@ -224,6 +233,8 @@ model Withdrawal {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("withdrawals")
+  @@index([status, createdAt], map: "withdrawals_status_createdAt_idx")
+  @@index([userId, status], map: "withdrawals_userId_status_idx")
 }
 
 enum WithdrawalStatus {
@@ -299,6 +310,7 @@ model Referral {
   referrer User @relation("ReferrerRelation", fields: [referrerId], references: [id])
 
   @@map("referrals")
+  @@index([referrerId, createdAt(sort: Desc)], map: "referrals_referrerId_createdAt_idx")
 }
 
 // ─────────────────────────────────────────
@@ -422,6 +434,7 @@ model UserRackInventory {
   placement   UserRackPlacement? // null = in storage, set = placed in room
 
   @@map("user_rack_inventory")
+  @@index([userId, acquiredAt(sort: Desc)], map: "user_rack_inventory_userId_acquiredAt_idx")
 }
 
 // ─────────────────────────────────────────
@@ -513,6 +526,7 @@ model Deposit {
   user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("deposits")
+  @@index([userId, createdAt(sort: Desc)], map: "deposits_userId_createdAt_idx")
 }
 
 enum DepositStatus {
